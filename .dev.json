@@ -1,0 +1,35 @@
+{
+  "session": "project",
+  "windows": [
+    {
+      "name": "Build",
+      "actions": ["cargo watch -x build"],
+      "pwd": ".",
+      "select": true
+    },
+    {
+      "name": "Test",
+      "actions": ["cargo watch -x test"],
+      "pwd": ".",
+      "select": false
+    },
+    {
+      "name": "Run",
+      "actions": [],
+      "pwd": ".",
+      "select": false
+    },
+    {
+      "name": "Code",
+      "actions": [],
+      "pwd": ".",
+      "select": false
+    },
+    {
+      "name": "Zsh",
+      "actions": [],
+      "pwd": ".",
+      "select": false
+    }
+  ]
+}

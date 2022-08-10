@@ -1,0 +1,2 @@
+* Project
+ - Create a boilerplate JavaScript project directory for building quick one-off test or prototype apps.
