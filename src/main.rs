@@ -2,8 +2,9 @@ use clap::Parser;
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
-use scuttle::{App, Args};
+type CmdWithArgs = (String, Vec<String>);
 
 #[derive(Parser, Debug)]
 #[clap(name = "Project")]
@@ -26,72 +27,77 @@ struct FileSetting {
 /// # Arguments
 ///
 /// * `apps` - A list of apps to run
-fn run_apps(apps: &[App]) {
-    for app in apps.iter() {
+fn run_apps(cmd_with_args: Vec<CmdWithArgs>) -> Result<(), Box<dyn std::error::Error>> {
+    for (cmd, args) in cmd_with_args {
         println!("");
         println!("========================");
-        println!("$ {} {}", app.command, Args(app.args.to_owned()));
+        println!("$ {} {:?}", cmd, args);
         println!("========================");
 
-        match scuttle::run_status(app) {
-            Err(error) => panic!("panic{}", error),
-            Ok(_status) => {
-                if app.command == "mkdir" {
-                    let rust_project_path = Path::new(&app.args[0]);
+        let mut command = Command::new(&cmd);
+        command.args(&args);
 
-                    // change to the project path
-                    match env::set_current_dir(&rust_project_path) {
-                        Ok(_result) => {
-                            println!("Directory {} has been created", &app.args[0])
-                        }
-                        Err(error) => panic!(
-                            "Error [{}] while trying to set project directory: {}",
-                            error, &app.args[0]
-                        ),
-                    };
-                }
-                continue;
+        let output = command.output().expect("Failed to execute command");
+
+        if !output.status.success() {
+            panic!("Command {} exited with {:?}", cmd, output.status.code());
+        } else {
+            if cmd == "mkdir" {
+                let rust_project_path = Path::new(&args[0]);
+
+                // change to the project path
+                match env::set_current_dir(&rust_project_path) {
+                    Ok(_result) => {
+                        println!("Directory {} has been created", &args[0])
+                    }
+                    Err(error) => panic!(
+                        "Error [{}] while trying to set project directory: {}",
+                        error, &args[0]
+                    ),
+                };
             }
-        };
+            continue;
+        }
     }
+
+    Ok(())
 }
 
 fn main() {
     let args = Cli::parse();
     let project_path = &args.project_path;
 
-    let create_directory = scuttle::App {
-        command: String::from("mkdir"),
-        args: vec![project_path.to_string()],
-    };
-    let git_init = scuttle::App {
-        command: String::from("git"),
-        args: vec!["init".to_string()],
-    };
-    let npm_init = scuttle::App {
-        command: String::from("npm".to_string()),
-        args: vec!["init".to_string(), "-y".to_string()],
-    };
-    let npm_install_parcel = scuttle::App {
-        command: String::from("npm".to_string()),
-        args: vec![
+    let create_directory = (String::from("mkdir"), vec![project_path.to_string()]);
+    let git_init = (String::from("git"), vec!["init".to_string()]);
+    let npm_init = (
+        String::from("npm".to_string()),
+        vec!["init".to_string(), "-y".to_string()],
+    );
+    let npm_install_vite = (
+        String::from("npm".to_string()),
+        vec![
             "install".to_string(),
             "--save-dev".to_string(),
-            "parcel".to_string(),
+            "vite".to_string(),
+            "@vitejs/plugin-react".to_string(),
             "jest".to_string(),
             "eslint".to_string(),
             "eslint-plugin-jest".to_string(),
             "eslint-plugin-react".to_string(),
             "eslint-plugin-react-hooks".to_string(),
         ],
-    };
+    );
+    let npm_install_react = (
+        String::from("npm".to_string()),
+        vec!["install".to_string(), "react".to_string()],
+    );
     let package_json_update = r#"const fs = require('fs');
 
 const packageJson = './package.json';
 const contents = require(packageJson);
 
 contents.scripts = {
-  'dev:watch': 'parcel index.html',
+  'dev:watch': 'vite',
   linter: 'eslint .',
   test: 'jest .',
 };
@@ -103,21 +109,21 @@ fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
     console.error(err);
   }
 });"#;
-    let update_package_json = scuttle::App {
-        command: String::from("node".to_string()),
-        // the best way to update a JSON file is with JavaScript
-        args: vec!["-e".to_string(), package_json_update.to_string()],
-    };
+    let update_package_json = (
+        String::from("node".to_string()),
+        vec!["-e".to_string(), package_json_update.to_string()],
+    );
 
-    let apps: &[App] = &[
+    let apps: Vec<CmdWithArgs> = vec![
         create_directory,
         git_init,
         npm_init,
-        npm_install_parcel,
+        npm_install_vite,
+        npm_install_react,
         update_package_json,
     ];
 
-    run_apps(apps);
+    run_apps(apps).expect("One or more commands failed to execute");
 
     // create a .gitignore
     let git_ignore = FileSetting {
@@ -224,17 +230,41 @@ charset = utf-8
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
     />
 
-    <title></title>
+    <title>Project</title>
 
     <script src="index.js" type="module"></script>
   </head>
-  <body></body>
+  <body>
+    Test project ready to go!
+  </body>
 </html>
 "#,
     };
     let javascript = FileSetting {
         name: "index.js",
         contents: "console.log('hello, world!')",
+    };
+    let vite_config = FileSetting {
+        name: "vite.config.js",
+        contents: r#"import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
+import { defineConfig } from 'vite';
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      api: resolve(__dirname, './src/api'),
+      components: resolve(__dirname, './src/components'),
+      hooks: resolve(__dirname, './src/hooks'),
+      layouts: resolve(__dirname, './src/layouts'),
+      pages: resolve(__dirname, './src/pages'),
+      utils: resolve(__dirname, './src/utils'),
+    },
+  },
+});
+"#,
     };
 
     println!("");
@@ -246,6 +276,7 @@ charset = utf-8
         jsconfig,
         html,
         javascript,
+        vite_config,
     ]
     .iter()
     .for_each(|file| {

@@ -2,28 +2,10 @@
   "session": "project",
   "windows": [
     {
-      "name": "Build",
-      "actions": ["cargo watch -x build"],
+      "name": "Code",
+      "actions": ["nvim"],
       "pwd": ".",
       "select": true
-    },
-    {
-      "name": "Test",
-      "actions": ["cargo watch -x test"],
-      "pwd": ".",
-      "select": false
-    },
-    {
-      "name": "Run",
-      "actions": [],
-      "pwd": ".",
-      "select": false
-    },
-    {
-      "name": "Code",
-      "actions": [],
-      "pwd": ".",
-      "select": false
     },
     {
       "name": "Zsh",
