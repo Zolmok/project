@@ -9,7 +9,7 @@ type CmdWithArgs = (String, Vec<String>);
 #[derive(Parser, Debug)]
 #[clap(name = "Project")]
 #[clap(author = "Ricky Nelson <rickyn@zolmok.org")]
-#[clap(version = "0.1.0")]
+#[clap(version = "0.2.0")]
 #[clap(about = "Bootstrap a new project directory", long_about = None)]
 struct Cli {
     #[clap(long, value_parser)]
@@ -128,17 +128,34 @@ fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
     // create a .gitignore
     let git_ignore = FileSetting {
         name: ".gitignore",
-        contents: r#"node_modules
+        contents: r#"# web
+node_modules
+
+# rust
+target
 "#,
     };
     let prettier = FileSetting {
-        name: ".prettierrc",
-        contents: r#"{
-  "bracketSpacing": false,
-  "singleQuote": true,
-  "printWidth": 80,
-  "trailingComma": "all"
-}
+        name: "prettier.config.js",
+        contents: r#"// https://prettier.io/docs/en/options.html
+/** @type {import('prettier').RequiredOptions} */
+module.exports = {
+  trailingComma: 'es5',
+  bracketSameLine: true,
+  bracketSpacing: true,
+  tabWidth: 2,
+  semi: true,
+  singleQuote: true,
+  arrowParens: 'always',
+  overrides: [
+    {
+      files: 'Routes.*',
+      options: {
+        printWidth: 999,
+      },
+    },
+  ],
+};
 "#,
     };
     let eslintrc = FileSetting {
