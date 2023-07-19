@@ -226,10 +226,11 @@ charset = utf-8
         name: "jsconfig.json",
         contents: r#"{
   "compilerOptions": {
-    "baseUrl": ".",
-    "target": "esnext",
     "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
     "checkJs": true,
+    "moduleResolution": "node",
+    "target": "esnext",
   },
   "exclude": ["node_modules", "dist"],
   "include": ["./**/*"]
