@@ -9,7 +9,7 @@ type CmdWithArgs = (String, Vec<String>);
 #[derive(Parser, Debug)]
 #[clap(name = "Project")]
 #[clap(author = "Ricky Nelson <rickyn@zolmok.org")]
-#[clap(version = "0.2.0")]
+#[clap(version = "0.4.0")]
 #[clap(about = "Bootstrap a new project directory", long_about = None)]
 struct Cli {
     #[clap(long, value_parser)]
@@ -229,7 +229,9 @@ charset = utf-8
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "checkJs": true,
+    "jsx": "react",
     "moduleResolution": "node",
+    "resolveJsonModule": true,
     "target": "esnext",
   },
   "exclude": ["node_modules", "dist"],
