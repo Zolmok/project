@@ -236,10 +236,16 @@ charset = utf-8
         contents: r#"{
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
-    "baseUrl": ".",
+    "baseUrl": "./src",
     "checkJs": true,
-    "jsx": "react",
+    "lib": ["dom", "es2017"],
+    "jsx": "react-jsx",
     "moduleResolution": "node",
+    "noEmit": true,
+    "resolve": {
+      "extensions": [".js", ".jsx", ".json"],
+      "modules": ["src", "node_modules"]
+    },
     "resolveJsonModule": true,
     "target": "esnext",
   },
