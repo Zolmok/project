@@ -66,14 +66,32 @@ fn run_apps(cmd_with_args: Vec<CmdWithArgs>) -> Result<(), Box<dyn std::error::E
 fn main() {
     let args = Cli::parse();
     let project_path = &args.project_path;
+    let src_path = format!("{}/src", project_path);
 
-    let create_directory = (String::from("mkdir"), vec![project_path.to_string()]);
+    match fs::create_dir_all(&src_path) {
+        Ok(_result) => {
+            match env::set_current_dir(&project_path) {
+                Ok(_result) => {
+                    println!("Directory {} has been created", &project_path)
+                }
+                Err(error) => panic!(
+                    "Error [{}] while trying to set project directory: {}",
+                    error, &project_path
+                ),
+            };
+        }
+        Err(error) => panic!(
+            "Error [{}] while trying to create directory: {}",
+            error, &src_path
+        ),
+    };
+
     let git_init = (String::from("git"), vec!["init".to_string()]);
     let npm_init = (
         String::from("npm".to_string()),
         vec!["init".to_string(), "-y".to_string()],
     );
-    let npm_install_vite = (
+    let npm_install = (
         String::from("npm".to_string()),
         vec![
             "install".to_string(),
@@ -81,15 +99,13 @@ fn main() {
             "vite".to_string(),
             "@vitejs/plugin-react".to_string(),
             "jest".to_string(),
+            "react".to_string(),
+            "react-dom".to_string(),
             "eslint".to_string(),
             "eslint-plugin-jest".to_string(),
             "eslint-plugin-react".to_string(),
             "eslint-plugin-react-hooks".to_string(),
         ],
-    );
-    let npm_install_react = (
-        String::from("npm".to_string()),
-        vec!["install".to_string(), "react".to_string()],
     );
     let package_json_update = r#"const fs = require('fs');
 
@@ -114,14 +130,7 @@ fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
         vec!["-e".to_string(), package_json_update.to_string()],
     );
 
-    let apps: Vec<CmdWithArgs> = vec![
-        create_directory,
-        git_init,
-        npm_init,
-        npm_install_vite,
-        npm_install_react,
-        update_package_json,
-    ];
+    let apps: Vec<CmdWithArgs> = vec![git_init, npm_init, npm_install, update_package_json];
 
     run_apps(apps).expect("One or more commands failed to execute");
 
@@ -252,10 +261,10 @@ charset = utf-8
 
     <title>Project</title>
 
-    <script src="index.js" type="module"></script>
+    <script src="src/app.jsx" type="module"></script>
   </head>
   <body>
-    Test project ready to go!
+    <div id="app"></div>
   </body>
 </html>
 "#,
@@ -287,6 +296,24 @@ export default defineConfig({
 "#,
     };
 
+    let project_jsx = FileSetting {
+        name: "src/project.jsx",
+        contents: r#"export default function Project() {
+  return <div>Test project ready to go!</div>;
+}
+"#,
+    };
+    let app_jsx = FileSetting {
+        name: "src/app.jsx",
+        contents: r#"import { createRoot } from 'react-dom/client';
+import Project from './project';
+
+const root = createRoot(document.getElementById('app'));
+
+root.render(<Project />);
+"#,
+    };
+
     println!("");
     [
         git_ignore,
@@ -297,6 +324,8 @@ export default defineConfig({
         html,
         javascript,
         vite_config,
+        project_jsx,
+        app_jsx,
     ]
     .iter()
     .for_each(|file| {
