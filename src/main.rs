@@ -172,6 +172,7 @@ module.exports = {
         contents: r#"{
   "env": {
     "browser": true,
+    "es2021": true,
     "node": true
   },
   "extends": [
@@ -200,6 +201,8 @@ module.exports = {
     "quotes": ["error", "single"],
     "react-hooks/rules-of-hooks": "error",
     "react-hooks/exhaustive-deps": "warn",
+    "react/react-in-jsx-scope": "off",
+    "react/jsx-uses-react": "off",
     "space-infix-ops": ["error", { "int32Hint": false }]
   },
   "settings": {
