@@ -144,7 +144,8 @@ const packageJson = './package.json';
 const contents = require(packageJson);
 
 contents.scripts = {
-  'dev:watch': 'vite',
+  'dev:build': 'vite --buid',
+  'dev:watch': 'vite --open',
   linter: 'eslint .',
   test: 'jest .',
 };
