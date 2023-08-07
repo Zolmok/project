@@ -21,6 +21,18 @@ struct FileSetting {
     name: &'static str,
     contents: &'static str,
 }
+struct BinaryFileSetting {
+    name: &'static str,
+    contents: &'static [u8],
+}
+
+const ANDROID_CHROME_192: &'static [u8] = include_bytes!("./favicon/android-chrome-192x192.png");
+const ANDROID_CHROME_512: &'static [u8] = include_bytes!("./favicon/android-chrome-512x512.png");
+const APPLE_TOUCH: &'static [u8] = include_bytes!("./favicon/apple-touch-icon.png");
+const FAVICON_16: &'static [u8] = include_bytes!("./favicon/favicon-16x16.png");
+const FAVICON_32: &'static [u8] = include_bytes!("./favicon/favicon-32x32.png");
+const FAVICON: &'static [u8] = include_bytes!("./favicon/favicon.ico");
+const WEBMANIFEST: &'static [u8] = include_bytes!("./favicon/site.webmanifest");
 
 /// Run a list of apps and print out the command and it's arguments before running
 ///
@@ -63,26 +75,36 @@ fn run_apps(cmd_with_args: Vec<CmdWithArgs>) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn main() {
-    let args = Cli::parse();
-    let project_path = &args.project_path;
-    let src_path = format!("{}/src", project_path);
-
-    match fs::create_dir_all(&src_path) {
+fn create_directory(path: &str) {
+    match fs::create_dir_all(&path) {
         Ok(_result) => {
-            match env::set_current_dir(&project_path) {
-                Ok(_result) => {
-                    println!("Directory {} has been created", &project_path)
-                }
-                Err(error) => panic!(
-                    "Error [{}] while trying to set project directory: {}",
-                    error, &project_path
-                ),
-            };
+            println!("Directory {} has been created", &path)
         }
         Err(error) => panic!(
             "Error [{}] while trying to create directory: {}",
-            error, &src_path
+            error, &path
+        ),
+    };
+}
+
+fn main() {
+    let args = Cli::parse();
+    let project_path = &args.project_path;
+    let public_path = format!("{}/public", project_path);
+    let src_path = format!("{}/src", project_path);
+
+    [public_path, src_path]
+        .iter()
+        .for_each(|path| create_directory(path));
+
+    // change to the project path
+    match env::set_current_dir(&project_path) {
+        Ok(_result) => {
+            println!("Project directory has been set to {}", &project_path)
+        }
+        Err(error) => panic!(
+            "Error [{}] while trying to set project directory: {}",
+            error, &project_path
         ),
     };
 
@@ -95,16 +117,25 @@ fn main() {
         String::from("npm".to_string()),
         vec![
             "install".to_string(),
-            "--save-dev".to_string(),
-            "vite".to_string(),
-            "@vitejs/plugin-react".to_string(),
-            "jest".to_string(),
             "react".to_string(),
             "react-dom".to_string(),
+        ],
+    );
+    let npm_install_dev = (
+        String::from("npm".to_string()),
+        vec![
+            "install".to_string(),
+            "--save-dev".to_string(),
+            "@types/jest".to_string(),
+            "@types/react".to_string(),
+            "@vitejs/plugin-react".to_string(),
             "eslint".to_string(),
             "eslint-plugin-jest".to_string(),
             "eslint-plugin-react".to_string(),
             "eslint-plugin-react-hooks".to_string(),
+            "jest".to_string(),
+            "sass".to_string(),
+            "vite".to_string(),
         ],
     );
     let package_json_update = r#"const fs = require('fs');
@@ -130,7 +161,13 @@ fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
         vec!["-e".to_string(), package_json_update.to_string()],
     );
 
-    let apps: Vec<CmdWithArgs> = vec![git_init, npm_init, npm_install, update_package_json];
+    let apps: Vec<CmdWithArgs> = vec![
+        git_init,
+        npm_init,
+        npm_install_dev,
+        npm_install,
+        update_package_json,
+    ];
 
     run_apps(apps).expect("One or more commands failed to execute");
 
@@ -270,6 +307,11 @@ charset = utf-8
 
     <title>Project</title>
 
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+
     <script src="src/app.jsx" type="module"></script>
   </head>
   <body>
@@ -342,4 +384,50 @@ root.render(<Project />);
 
         fs::write(file.name, file.contents).expect("Unable to write file");
     });
+
+    let android_chrome_192 = BinaryFileSetting {
+        name: "android-chrome-192x192.png",
+        contents: ANDROID_CHROME_192,
+    };
+    let android_chrome_512 = BinaryFileSetting {
+        name: "android-chrome-512x512.png",
+        contents: ANDROID_CHROME_512,
+    };
+    let apple_touch = BinaryFileSetting {
+        name: "apple-touch-icon.png",
+        contents: APPLE_TOUCH,
+    };
+    let favicon_16 = BinaryFileSetting {
+        name: "favicon-16x16.png",
+        contents: FAVICON_16,
+    };
+    let favicon_32 = BinaryFileSetting {
+        name: "favicon-32x32.png",
+        contents: FAVICON_32,
+    };
+    let favicon = BinaryFileSetting {
+        name: "favicon.ico",
+        contents: FAVICON,
+    };
+    let webmanifest = BinaryFileSetting {
+        name: "site.webmanifest",
+        contents: WEBMANIFEST,
+    };
+    [
+        android_chrome_192,
+        android_chrome_512,
+        apple_touch,
+        favicon_16,
+        favicon_32,
+        favicon,
+        webmanifest,
+    ]
+    .iter()
+    .for_each(|file| {
+        println!("Creating file: {}", file.name);
+
+        fs::write(format!("./public/{}", file.name), file.contents).expect("Unable to write file");
+    });
+
+    println!("Done!");
 }
