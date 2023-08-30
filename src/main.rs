@@ -144,7 +144,7 @@ const packageJson = './package.json';
 const contents = require(packageJson);
 
 contents.scripts = {
-  'dev:build': 'vite --buid',
+  'dev:build': 'vite --build',
   'dev:watch': 'vite --open',
   linter: 'eslint .',
   test: 'jest .',
@@ -321,10 +321,6 @@ charset = utf-8
 </html>
 "#,
     };
-    let javascript = FileSetting {
-        name: "index.js",
-        contents: "console.log('hello, world!')",
-    };
     let vite_config = FileSetting {
         name: "vite.config.js",
         contents: r#"import react from '@vitejs/plugin-react';
@@ -374,7 +370,6 @@ root.render(<Project />);
         editorconfig,
         jsconfig,
         html,
-        javascript,
         vite_config,
         project_jsx,
         app_jsx,
