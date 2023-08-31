@@ -35,26 +35,57 @@ const FAVICON: &'static [u8] = include_bytes!("./favicon/favicon.ico");
 const WEBMANIFEST: &'static [u8] = include_bytes!("./favicon/site.webmanifest");
 const RED_BOX_48: &'static [u8] = include_bytes!("./red-box-48.png");
 
-/// Run a list of apps and print out the command and it's arguments before running
+/// Executes a sequence of shell commands with their respective arguments.
+/// For each command, it prints a separator, the command being run, and then executes it.
+/// If any of the commands exit with an error code, the function panics with a descriptive error message.
+///
+/// Special handling exists for the `mkdir` command; it changes the current working directory to
+/// the newly created directory.
 ///
 /// # Arguments
 ///
-/// * `apps` - A list of apps to run
+/// * `cmd_with_args` - A vector of tuples, where each tuple contains a command as a `String`
+///   and its arguments as a `Vec<String>`.
+///
+/// # Returns
+///
+/// Returns `Ok(())` if all commands execute successfully.
+/// Returns `Err` wrapped in a `Box<dyn std::error::Error>` if there's an error running any command.
+///
+/// # Panics
+///
+/// Panics if there's a failure in command execution or if changing the current directory fails.
+///
+/// # Examples
+///
+/// ```
+/// run_apps(vec![
+///     ("ls".to_string(), vec!["-l".to_string()]),
+///     ("mkdir".to_string(), vec!["new_directory".to_string()]),
+/// ]);
+/// ```
+///
+/// Expected output: Details of commands being run and their outputs. Panics on errors.
 fn run_apps(cmd_with_args: Vec<CmdWithArgs>) -> Result<(), Box<dyn std::error::Error>> {
     for (cmd, args) in cmd_with_args {
+        // Print separator and command details
         println!("");
         println!("========================");
         println!("$ {} {:?}", cmd, args);
         println!("========================");
 
+        // Initialize and set up the command
         let mut command = Command::new(&cmd);
         command.args(&args);
 
+        // Run the command
         let output = command.output().expect("Failed to execute command");
 
+        // Check the exit status
         if !output.status.success() {
             panic!("Command {} exited with {:?}", cmd, output.status.code());
         } else {
+            // Special case for 'mkdir' command
             if cmd == "mkdir" {
                 let rust_project_path = Path::new(&args[0]);
 
@@ -76,6 +107,26 @@ fn run_apps(cmd_with_args: Vec<CmdWithArgs>) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
+/// Creates a new directory at the specified `path`. If the parent directories
+/// do not exist, it creates them as well. If the directory creation is successful,
+/// it prints a confirmation message. In case of any error during directory
+/// creation, the function panics with a descriptive error message.
+///
+/// # Arguments
+///
+/// * `path` - A string slice representing the path where the directory should be created.
+///
+/// # Panics
+///
+/// Panics if there's an error during directory creation, displaying the specific error and path.
+///
+/// # Examples
+///
+/// ```
+/// create_directory("/path/to/directory");
+/// ```
+///
+/// Expected output: `Directory /path/to/directory has been created`
 fn create_directory(path: &str) {
     match fs::create_dir_all(&path) {
         Ok(_result) => {
@@ -88,18 +139,23 @@ fn create_directory(path: &str) {
     };
 }
 
+// The main function to set up a new project.
 fn main() {
+    // Parsing command-line arguments.
     let args = Cli::parse();
+
+    // Constructing paths for the project.
     let project_path = &args.project_path;
     let public_path = format!("{}/public", project_path);
     let images_path = format!("{}/public/images", project_path);
     let src_path = format!("{}/src", project_path);
 
+    // Creating necessary directories in the project.
     [public_path, images_path, src_path]
         .iter()
         .for_each(|path| create_directory(path));
 
-    // change to the project path
+    // Change the current directory to the project path.
     match env::set_current_dir(&project_path) {
         Ok(_result) => {
             println!("Project directory has been set to {}", &project_path)
@@ -111,6 +167,9 @@ fn main() {
     };
 
     let git_init = (String::from("git"), vec!["init".to_string()]);
+
+    // Define commands to initialize git and npm in the project directory.
+    // Each command is represented as a tuple with the command name and its arguments.
     let npm_init = (
         String::from("npm".to_string()),
         vec!["init".to_string(), "-y".to_string()],
@@ -176,9 +235,11 @@ fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
         update_package_json,
     ];
 
+    // Run the defined commands.
     run_apps(apps).expect("One or more commands failed to execute");
 
-    // create a .gitignore
+    // Define file content settings for creating configuration files.
+    // Each file is represented with its name and content.
     let git_ignore = FileSetting {
         name: ".gitignore",
         contents: r#"# web
@@ -427,6 +488,7 @@ module.exports = {
 "#,
     };
 
+    // Write out all the configuration files.
     println!("");
     [
         git_ignore,
@@ -449,6 +511,8 @@ module.exports = {
         fs::write(file.name, file.contents).expect("Unable to write file");
     });
 
+    // Define binary file content settings for icons and images.
+    // Each binary file is represented with its name and content.
     let android_chrome_192 = BinaryFileSetting {
         name: "android-chrome-192x192.png",
         contents: ANDROID_CHROME_192,
@@ -481,6 +545,8 @@ module.exports = {
         name: "red-box-48.png",
         contents: RED_BOX_48,
     };
+
+    // Write out all the binary files.
     [
         android_chrome_192,
         android_chrome_512,
