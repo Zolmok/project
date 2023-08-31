@@ -33,6 +33,7 @@ const FAVICON_16: &'static [u8] = include_bytes!("./favicon/favicon-16x16.png");
 const FAVICON_32: &'static [u8] = include_bytes!("./favicon/favicon-32x32.png");
 const FAVICON: &'static [u8] = include_bytes!("./favicon/favicon.ico");
 const WEBMANIFEST: &'static [u8] = include_bytes!("./favicon/site.webmanifest");
+const RED_BOX_48: &'static [u8] = include_bytes!("./red-box-48.png");
 
 /// Run a list of apps and print out the command and it's arguments before running
 ///
@@ -91,9 +92,10 @@ fn main() {
     let args = Cli::parse();
     let project_path = &args.project_path;
     let public_path = format!("{}/public", project_path);
+    let images_path = format!("{}/public/images", project_path);
     let src_path = format!("{}/src", project_path);
 
-    [public_path, src_path]
+    [public_path, images_path, src_path]
         .iter()
         .for_each(|path| create_directory(path));
 
@@ -136,6 +138,9 @@ fn main() {
             "jest".to_string(),
             "sass".to_string(),
             "vite".to_string(),
+            "tailwindcss".to_string(),
+            "postcss".to_string(),
+            "autoprefixer".to_string(),
         ],
     );
     let package_json_update = r#"const fs = require('fs');
@@ -151,6 +156,7 @@ contents.scripts = {
 };
 contents.author = 'Ricky Nelson <rickyn@zolmok.org>';
 contents.license = 'UNLICENSED';
+contents.type = 'module';
 
 fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
   if (err) {
@@ -177,6 +183,7 @@ fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
         name: ".gitignore",
         contents: r#"# web
 node_modules
+dist
 
 # rust
 target
@@ -347,7 +354,34 @@ export default defineConfig({
     let project_jsx = FileSetting {
         name: "src/project.jsx",
         contents: r#"export default function Project() {
-  return <div>Test project ready to go!</div>;
+  return (
+    <main>
+      <header className="relative isolate">
+        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+          <div className="mx-auto flex max-w-2xl items-center justify-between gap-x-8 lg:mx-0 lg:max-w-none">
+            <div className="flex items-center gap-x-6">
+              <img
+                src="/images/red-box-48.png"
+                alt="Project"
+                className="h-16 w-16 flex-none"
+              />
+              <h1>
+                <div className="mt-1 text-base font-semibold leading-6 text-gray-900">
+                  Project
+                </div>
+              </h1>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-2xl grid-cols-1 grid-rows-1 items-start gap-x-8 gap-y-8 lg:mx-0 lg:max-w-none lg:grid-cols-3">
+          Test project ready to go!
+        </div>
+      </div>
+    </main>
+  );
 }
 "#,
     };
@@ -356,9 +390,40 @@ export default defineConfig({
         contents: r#"import { createRoot } from 'react-dom/client';
 import Project from './project';
 
+import './index.css';
+
 const root = createRoot(document.getElementById('app'));
 
 root.render(<Project />);
+"#,
+    };
+    let postcss_config = FileSetting {
+        name: "postcss.config.js",
+        contents: r#"export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+"#,
+    };
+    let index_css = FileSetting {
+        name: "src/index.css",
+        contents: r#"@tailwind base;
+@tailwind components;
+@tailwind utilities;
+"#,
+    };
+    let tailwind_config = FileSetting {
+        name: "tailwind.config.js",
+        contents: r#"/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
 "#,
     };
 
@@ -373,6 +438,9 @@ root.render(<Project />);
         vite_config,
         project_jsx,
         app_jsx,
+        postcss_config,
+        index_css,
+        tailwind_config,
     ]
     .iter()
     .for_each(|file| {
@@ -409,6 +477,10 @@ root.render(<Project />);
         name: "site.webmanifest",
         contents: WEBMANIFEST,
     };
+    let red_box_48 = BinaryFileSetting {
+        name: "red-box-48.png",
+        contents: RED_BOX_48,
+    };
     [
         android_chrome_192,
         android_chrome_512,
@@ -424,6 +496,9 @@ root.render(<Project />);
 
         fs::write(format!("./public/{}", file.name), file.contents).expect("Unable to write file");
     });
+
+    println!("Creating file: red-box-48.png");
+    fs::write("./public/images/red-box-48.png", red_box_48.contents).expect("Unable to write file");
 
     println!("Done!");
 }
