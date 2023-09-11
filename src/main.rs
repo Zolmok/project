@@ -251,7 +251,7 @@ target
 "#,
     };
     let prettier = FileSetting {
-        name: "prettier.config.js",
+        name: "prettier.config.cjs",
         contents: r#"// https://prettier.io/docs/en/options.html
 /** @type {import('prettier').RequiredOptions} */
 module.exports = {
