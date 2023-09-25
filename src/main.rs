@@ -149,11 +149,19 @@ fn main() {
     let public_path = format!("{}/public", project_path);
     let images_path = format!("{}/public/images", project_path);
     let src_path = format!("{}/src", project_path);
+    let pages_path = format!("{}/pages", src_path);
+    let project_pages_path = format!("{}/project", pages_path);
 
     // Creating necessary directories in the project.
-    [public_path, images_path, src_path]
-        .iter()
-        .for_each(|path| create_directory(path));
+    [
+        public_path,
+        images_path,
+        src_path,
+        pages_path,
+        project_pages_path,
+    ]
+    .iter()
+    .for_each(|path| create_directory(path));
 
     // Change the current directory to the project path.
     match env::set_current_dir(&project_path) {
@@ -187,6 +195,10 @@ fn main() {
         vec![
             "install".to_string(),
             "--save-dev".to_string(),
+            "@babel/preset-env".to_string(),
+            "@babel/preset-react".to_string(),
+            "@testing-library/jest-dom".to_string(),
+            "@testing-library/react".to_string(),
             "@types/jest".to_string(),
             "@types/react".to_string(),
             "@vitejs/plugin-react".to_string(),
@@ -195,6 +207,8 @@ fn main() {
             "eslint-plugin-react".to_string(),
             "eslint-plugin-react-hooks".to_string(),
             "jest".to_string(),
+            "jest-environment-jsdom".to_string(),
+            "react-test-renderer".to_string(),
             "sass".to_string(),
             "vite".to_string(),
             "tailwindcss".to_string(),
@@ -208,10 +222,12 @@ const packageJson = './package.json';
 const contents = require(packageJson);
 
 contents.scripts = {
-  'build': 'vite build',
-  'dev:watch': 'vite --open',
+  build: 'vite build',
+  dev: 'vite --open',
+  start: 'vite --open',
   linter: 'eslint .',
   test: 'jest .',
+  'test:watch': 'jest . --watch',
 };
 contents.author = 'Ricky Nelson <rickyn@zolmok.org>';
 contents.license = 'UNLICENSED';
@@ -413,7 +429,7 @@ export default defineConfig({
     };
 
     let project_jsx = FileSetting {
-        name: "src/project.jsx",
+        name: "src/pages/project/project.jsx",
         contents: r#"export default function Project() {
   return (
     <main>
@@ -446,10 +462,45 @@ export default defineConfig({
 }
 "#,
     };
+    let project_test_jsx = FileSetting {
+        name: "src/pages/project/project.test.jsx",
+        contents: r#"import { render, screen } from '@testing-library/react';
+import Project from './project';
+
+describe('<Project />', () => {
+  it('renders without crashing', () => {
+    render(<Project />);
+    expect(screen.getByAltText('Project')).toBeInTheDocument();
+  });
+
+  it('displays the image with alt text "Project"', () => {
+    render(<Project />);
+
+    const image = screen.getByAltText('Project');
+
+    expect(image).toBeInTheDocument();
+    expect(image.getAttribute('src')).toBe('/images/red-box-48.png');
+  });
+
+  it('displays the title "Project"', () => {
+    render(<Project />);
+
+    const title = screen.getByText('Project');
+
+    expect(title).toBeInTheDocument();
+  });
+
+  it('renders the text "Test project ready to go!"', () => {
+    render(<Project />);
+    expect(screen.getByText('Test project ready to go!')).toBeInTheDocument();
+  });
+});
+"#,
+    };
     let app_jsx = FileSetting {
         name: "src/app.jsx",
         contents: r#"import { createRoot } from 'react-dom/client';
-import Project from './project';
+import Project from 'pages/project/project';
 
 import './index.css';
 
@@ -487,22 +538,57 @@ module.exports = {
 };
 "#,
     };
+    let jest_setup = FileSetting {
+        name: "jest-setup.js",
+        contents: r#"import '@testing-library/jest-dom';"#,
+    };
+    let jest_config = FileSetting {
+        name: "jest.config.cjs",
+        contents: r#"module.exports = {
+  rootDir: '.',
+  moduleNameMapper: {
+    '^api/(.*)$': '<rootDir>/src/api/$1',
+    '^components/(.*)$': '<rootDir>/src/components/$1',
+    '^hooks/(.*)$': '<rootDir>/src/hooks/$1',
+    '^layouts/(.*)$': '<rootDir>/src/layouts/$1',
+    '^pages/(.*)$': '<rootDir>/src/pages/$1',
+    '^utils/(.*)$': '<rootDir>/src/utils/$1'
+  },
+  setupFilesAfterEnv: ['<rootDir>/jest-setup.js'],
+  testEnvironment: 'jsdom',
+};
+"#,
+    };
+    let babel_config = FileSetting {
+        name: "babel.config.cjs",
+        contents: r#"module.exports = {
+  presets: [
+    '@babel/preset-env',
+    ['@babel/preset-react', { runtime: 'automatic' }],
+  ],
+};
+"#,
+    };
 
     // Write out all the configuration files.
     println!("");
     [
-        git_ignore,
-        prettier,
-        eslintrc,
-        editorconfig,
-        jsconfig,
-        html,
-        vite_config,
-        project_jsx,
         app_jsx,
-        postcss_config,
+        babel_config,
+        editorconfig,
+        eslintrc,
+        git_ignore,
+        html,
         index_css,
+        jest_config,
+        jest_setup,
+        jsconfig,
+        postcss_config,
+        prettier,
+        project_jsx,
+        project_test_jsx,
         tailwind_config,
+        vite_config,
     ]
     .iter()
     .for_each(|file| {
