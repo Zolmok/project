@@ -1,2 +1,78 @@
-* Project
- - Create a boilerplate JavaScript project directory for building quick one-off test or prototype apps.
+#+TITLE: Vite + React + Tailwind App Scaffolder (Rust CLI)
+#+AUTHOR: Your Name
+#+OPTIONS: toc:2 num:nil
+
+* Overview
+
+This CLI tool scaffolds a modern frontend app using:
+
+- [x] Vite
+- [x] React
+- [x] TailwindCSS (via @tailwindcss/vite plugin)
+
+Written in Rust for speed, safety, and developer experience.
+
+* Features
+
+- Interactive app name prompt or CLI arg
+- Silent =npm create vite@latest= execution
+- =npm install= in the new project directory
+- TailwindCSS setup:
+  - Installs =tailwindcss= and =@tailwindcss/vite=
+  - Injects Tailwind plugin into =vite.config.js=
+  - Writes =src/index.css= with base Tailwind directives
+- Clear spinner-based progress UI
+- Final output with getting-started instructions
+
+* Usage
+
+#+begin_src shell
+cargo run -- [app-name]
+#+end_src
+
+If =app-name= is omitted, you’ll be prompted interactively.
+
+* Example
+
+#+begin_src shell
+cargo run -- my-app
+#+end_src
+
+Produces:
+
+#+begin_src text
+✅ React app 'my-app' created successfully!
+
+➡️  To get started:
+
+  cd my-app
+  npm run dev
+#+end_src
+
+* Installation Requirements
+
+- Node.js (>=18)
+- NPM
+- Vite
+- Rust toolchain (for compiling this CLI)
+
+* Development
+
+Build and run with:
+
+#+begin_src shell
+cargo build
+cargo run
+#+end_src
+
+* TODOs
+
+- [ ] Add support for other templates (e.g. react-ts)
+- [ ] Add config flags for Tailwind setup
+- [ ] Unit tests for file patching logic
+- [ ] Shell completion with =clap=
+
+* License
+
+MIT License.
+

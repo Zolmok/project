@@ -1,656 +1,172 @@
 use clap::Parser;
-use std::env;
-use std::fs;
+use dialoguer::Input;
+use indicatif::{ProgressBar, ProgressStyle};
+use regex::Regex;
+use std::fs::{self, OpenOptions};
+use std::io::Read;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
-type CmdWithArgs = (String, Vec<String>);
-
-#[derive(Parser, Debug)]
-#[clap(name = "Project")]
-#[clap(author = "Ricky Nelson <rickyn@zolmok.org")]
-#[clap(version = "0.4.0")]
-#[clap(about = "Bootstrap a new project directory", long_about = None)]
-struct Cli {
-    #[clap(long, value_parser)]
-    project_path: String,
+#[derive(Parser)]
+#[command(author, version, about)]
+struct Args {
+    /// Name of the React app to create
+    name: Option<String>,
 }
 
-#[derive(Debug)]
-struct FileSetting {
-    name: &'static str,
-    contents: &'static str,
-}
-struct BinaryFileSetting {
-    name: &'static str,
-    contents: &'static [u8],
-}
+fn setup_tailwind(app_path: &Path, spinner: &ProgressBar) {
+    spinner.set_style(
+        ProgressStyle::with_template("{spinner} {msg}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(100));
+    spinner.set_message("Installing TailwindCSS...");
 
-const ANDROID_CHROME_192: &'static [u8] = include_bytes!("./favicon/android-chrome-192x192.png");
-const ANDROID_CHROME_512: &'static [u8] = include_bytes!("./favicon/android-chrome-512x512.png");
-const APPLE_TOUCH: &'static [u8] = include_bytes!("./favicon/apple-touch-icon.png");
-const FAVICON_16: &'static [u8] = include_bytes!("./favicon/favicon-16x16.png");
-const FAVICON_32: &'static [u8] = include_bytes!("./favicon/favicon-32x32.png");
-const FAVICON: &'static [u8] = include_bytes!("./favicon/favicon.ico");
-const WEBMANIFEST: &'static [u8] = include_bytes!("./favicon/site.webmanifest");
-const RED_BOX_48: &'static [u8] = include_bytes!("./red-box-48.png");
+    let install = Command::new("npm")
+        .arg("install")
+        .arg("-D")
+        .arg("tailwindcss")
+        .arg("@tailwindcss/vite")
+        .current_dir(app_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 
-/// Executes a sequence of shell commands with their respective arguments.
-/// For each command, it prints a separator, the command being run, and then executes it.
-/// If any of the commands exit with an error code, the function panics with a descriptive error message.
-///
-/// Special handling exists for the `mkdir` command; it changes the current working directory to
-/// the newly created directory.
-///
-/// # Arguments
-///
-/// * `cmd_with_args` - A vector of tuples, where each tuple contains a command as a `String`
-///   and its arguments as a `Vec<String>`.
-///
-/// # Returns
-///
-/// Returns `Ok(())` if all commands execute successfully.
-/// Returns `Err` wrapped in a `Box<dyn std::error::Error>` if there's an error running any command.
-///
-/// # Panics
-///
-/// Panics if there's a failure in command execution or if changing the current directory fails.
-///
-/// # Examples
-///
-/// ```
-/// run_apps(vec![
-///     ("ls".to_string(), vec!["-l".to_string()]),
-///     ("mkdir".to_string(), vec!["new_directory".to_string()]),
-/// ]);
-/// ```
-///
-/// Expected output: Details of commands being run and their outputs. Panics on errors.
-fn run_apps(cmd_with_args: Vec<CmdWithArgs>) -> Result<(), Box<dyn std::error::Error>> {
-    for (cmd, args) in cmd_with_args {
-        // Print separator and command details
-        println!("");
-        println!("========================");
-        println!("$ {} {:?}", cmd, args);
-        println!("========================");
+    if !matches!(install, Ok(s) if s.success()) {
+        spinner.finish_and_clear();
+        eprintln!("❌ Failed to install TailwindCSS.");
+        std::process::exit(1);
+    }
 
-        // Initialize and set up the command
-        let mut command = Command::new(&cmd);
-        command.args(&args);
+    // Patch vite.config.js
+    let vite_config_path = app_path.join("vite.config.js");
+    let mut contents = String::new();
 
-        // Run the command
-        let output = command.output().expect("Failed to execute command");
+    if let Ok(mut file) = OpenOptions::new().read(true).open(&vite_config_path) {
+        file.read_to_string(&mut contents).ok();
+    }
 
-        // Check the exit status
-        if !output.status.success() {
-            panic!("Command {} exited with {:?}", cmd, output.status.code());
-        } else {
-            // Special case for 'mkdir' command
-            if cmd == "mkdir" {
-                let rust_project_path = Path::new(&args[0]);
+    // Simple idempotent patch
+    if !contents.contains("@tailwindcss/vite") {
+        // Inject the import at the top
+        let mut patched = format!("import tailwindcss from '@tailwindcss/vite';\n{}", contents);
 
-                // change to the project path
-                match env::set_current_dir(&rust_project_path) {
-                    Ok(_result) => {
-                        println!("Directory {} has been created", &args[0])
-                    }
-                    Err(error) => panic!(
-                        "Error [{}] while trying to set project directory: {}",
-                        error, &args[0]
-                    ),
-                };
-            }
-            continue;
+        // Find plugins array and inject tailwindcss()
+        let plugin_re = Regex::new(r"(?s)(plugins:\s*\[)(.*?)\]").unwrap();
+        patched = plugin_re
+            .replace(&patched, |caps: &regex::Captures| {
+                let existing = caps.get(2).map_or("", |m| m.as_str()).trim();
+                let mut plugins = vec!["tailwindcss()"];
+                if !existing.is_empty() {
+                    plugins.push(existing);
+                }
+                format!("{}{}\n  ]", &caps[1], plugins.join(",\n    "))
+            })
+            .to_string();
+
+        if fs::write(&vite_config_path, patched).is_err() {
+            spinner.finish_and_clear();
+            eprintln!("❌ Failed to update vite.config.js.");
+            std::process::exit(1);
         }
     }
 
-    Ok(())
+    // Write src/index.css
+    let css_path = app_path.join("src").join("index.css");
+    let tailwind_css = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n";
+
+    if fs::write(css_path, tailwind_css).is_err() {
+        spinner.finish_and_clear();
+        eprintln!("❌ Failed to write src/index.css.");
+        std::process::exit(1);
+    }
+
+    spinner.finish_and_clear();
+    println!("✅ TailwindCSS with Vite plugin configured.");
 }
 
-/// Creates a new directory at the specified `path`. If the parent directories
-/// do not exist, it creates them as well. If the directory creation is successful,
-/// it prints a confirmation message. In case of any error during directory
-/// creation, the function panics with a descriptive error message.
-///
-/// # Arguments
-///
-/// * `path` - A string slice representing the path where the directory should be created.
-///
-/// # Panics
-///
-/// Panics if there's an error during directory creation, displaying the specific error and path.
-///
-/// # Examples
-///
-/// ```
-/// create_directory("/path/to/directory");
-/// ```
-///
-/// Expected output: `Directory /path/to/directory has been created`
-fn create_directory(path: &str) {
-    match fs::create_dir_all(&path) {
-        Ok(_result) => {
-            println!("Directory {} has been created", &path)
-        }
-        Err(error) => panic!(
-            "Error [{}] while trying to create directory: {}",
-            error, &path
-        ),
-    };
-}
-
-// The main function to set up a new project.
 fn main() {
-    // Parsing command-line arguments.
-    let args = Cli::parse();
+    let args = Args::parse();
 
-    // Constructing paths for the project.
-    let project_path = &args.project_path;
-    let public_path = format!("{}/public", project_path);
-    let images_path = format!("{}/public/images", project_path);
-    let src_path = format!("{}/src", project_path);
-    let pages_path = format!("{}/pages", src_path);
-    let project_pages_path = format!("{}/project", pages_path);
+    let app_name = match args.name {
+        Some(name) => name,
+        None => Input::new()
+            .with_prompt("Enter your React app name")
+            .interact_text()
+            .unwrap_or_else(|err| {
+                eprintln!("Failed to read input: {}", err);
+                std::process::exit(1);
+            }),
+    };
 
-    // Creating necessary directories in the project.
-    [
-        public_path,
-        images_path,
-        src_path,
-        pages_path,
-        project_pages_path,
-    ]
-    .iter()
-    .for_each(|path| create_directory(path));
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::with_template("{spinner} {msg}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
 
-    // Change the current directory to the project path.
-    match env::set_current_dir(&project_path) {
-        Ok(_result) => {
-            println!("Project directory has been set to {}", &project_path)
+    spinner.set_message("Creating Vite app...");
+
+    let create_status = Command::new("npm")
+        .arg("create")
+        .arg("vite@latest")
+        .arg(&app_name)
+        .arg("--")
+        .arg("--template")
+        .arg("react")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null()) // suppress stdout
+        .stderr(Stdio::null()) // suppress stderr
+        .status();
+
+    match create_status {
+        Ok(code) if code.success() => {
+            spinner.set_message("Installing dependencies...");
         }
-        Err(error) => panic!(
-            "Error [{}] while trying to set project directory: {}",
-            error, &project_path
-        ),
-    };
-
-    let git_init = (String::from("git"), vec!["init".to_string()]);
-
-    // Define commands to initialize git and npm in the project directory.
-    // Each command is represented as a tuple with the command name and its arguments.
-    let npm_init = (
-        String::from("npm".to_string()),
-        vec!["init".to_string(), "-y".to_string()],
-    );
-    let npm_install = (
-        String::from("npm".to_string()),
-        vec![
-            "install".to_string(),
-            "react".to_string(),
-            "react-dom".to_string(),
-        ],
-    );
-    let npm_install_dev = (
-        String::from("npm".to_string()),
-        vec![
-            "install".to_string(),
-            "--save-dev".to_string(),
-            "@babel/preset-env".to_string(),
-            "@babel/preset-react".to_string(),
-            "@testing-library/jest-dom".to_string(),
-            "@testing-library/react".to_string(),
-            "@types/jest".to_string(),
-            "@types/react".to_string(),
-            "@vitejs/plugin-react".to_string(),
-            "eslint".to_string(),
-            "eslint-plugin-jest".to_string(),
-            "eslint-plugin-react".to_string(),
-            "eslint-plugin-react-hooks".to_string(),
-            "jest".to_string(),
-            "jest-environment-jsdom".to_string(),
-            "react-test-renderer".to_string(),
-            "sass".to_string(),
-            "vite".to_string(),
-            "tailwindcss".to_string(),
-            "postcss".to_string(),
-            "autoprefixer".to_string(),
-        ],
-    );
-    let package_json_update = r#"const fs = require('fs');
-
-const packageJson = './package.json';
-const contents = require(packageJson);
-
-contents.scripts = {
-  build: 'vite build',
-  dev: 'vite --open',
-  start: 'vite --open',
-  linter: 'eslint .',
-  test: 'jest .',
-  'test:watch': 'jest . --watch',
-};
-contents.author = 'Ricky Nelson <rickyn@zolmok.org>';
-contents.license = 'UNLICENSED';
-contents.type = 'module';
-
-fs.writeFile(packageJson, JSON.stringify(contents, null, 2), (err) => {
-  if (err) {
-    console.error(err);
-  }
-});"#;
-    let update_package_json = (
-        String::from("node".to_string()),
-        vec!["-e".to_string(), package_json_update.to_string()],
-    );
-
-    let apps: Vec<CmdWithArgs> = vec![
-        git_init,
-        npm_init,
-        npm_install_dev,
-        npm_install,
-        update_package_json,
-    ];
-
-    // Run the defined commands.
-    run_apps(apps).expect("One or more commands failed to execute");
-
-    // Define file content settings for creating configuration files.
-    // Each file is represented with its name and content.
-    let git_ignore = FileSetting {
-        name: ".gitignore",
-        contents: r#"# web
-node_modules
-dist
-
-# rust
-target
-"#,
-    };
-    let prettier = FileSetting {
-        name: "prettier.config.cjs",
-        contents: r#"// https://prettier.io/docs/en/options.html
-/** @type {import('prettier').RequiredOptions} */
-module.exports = {
-  trailingComma: 'es5',
-  bracketSameLine: true,
-  bracketSpacing: true,
-  tabWidth: 2,
-  semi: true,
-  singleQuote: true,
-  arrowParens: 'always',
-  overrides: [
-    {
-      files: 'Routes.*',
-      options: {
-        printWidth: 999,
-      },
-    },
-  ],
-};
-"#,
-    };
-    let eslintrc = FileSetting {
-        name: ".eslintrc.json",
-        contents: r#"{
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true
-  },
-  "extends": [
-    "eslint:recommended",
-    "plugin:jest/recommended",
-    "plugin:react/recommended",
-    "plugin:react-hooks/recommended"
-  ],
-  "overrides": [
-    { "files": ["*.jsx", "*.js"] }
-  ],
-  "parserOptions": {
-    "ecmaFeatures": {
-      "jsx": true
-    },
-    "ecmaVersion": "latest",
-    "sourceType": "module"
-  },
-  "plugins": [
-    "jest",
-    "react",
-    "react-hooks"
-  ],
-  "rules": {
-    "object-curly-spacing": ["error", "always"],
-    "quotes": ["error", "single"],
-    "react-hooks/rules-of-hooks": "error",
-    "react-hooks/exhaustive-deps": "warn",
-    "react/react-in-jsx-scope": "off",
-    "react/jsx-uses-react": "off",
-    "space-infix-ops": ["error", { "int32Hint": false }]
-  },
-  "settings": {
-    "react": {
-      "version": "detect"
+        Ok(code) => {
+            spinner.finish_and_clear();
+            eprintln!("❌ App creation failed with exit code: {}", code);
+            std::process::exit(1);
+        }
+        Err(err) => {
+            spinner.finish_and_clear();
+            eprintln!("❌ Failed to run Vite create command: {}", err);
+            std::process::exit(1);
+        }
     }
-  }
+
+    let app_path = Path::new(&app_name);
+    let install_status = Command::new("npm")
+        .arg("install")
+        .current_dir(app_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null()) // suppress stdout
+        .stderr(Stdio::null()) // suppress stderr
+        .status();
+
+    setup_tailwind(app_path, &spinner);
+
+    spinner.finish_and_clear();
+
+    match install_status {
+        Ok(code) if code.success() => {
+            println!("✅ React app '{}' created successfully!", app_name);
+            println!("\n➡️  To get started:\n");
+            println!("  cd {}\n  npm run dev\n", app_name);
+        }
+        Ok(code) => {
+            eprintln!("❌ `npm install` failed with exit code: {}", code);
+            std::process::exit(1);
+        }
+        Err(err) => {
+            eprintln!("❌ Failed to run `npm install`: {}", err);
+            std::process::exit(1);
+        }
+    }
 }
-"#,
-    };
-    let editorconfig = FileSetting {
-        name: ".editorconfig",
-        contents: r#"# EditorConfig is awesome: https://EditorConfig.org
 
-# top-most EditorConfig file
-root = true
-
-# Unix-style newlines with a newline ending every file
-[*]
-end_of_line = lf
-insert_final_newline = true
-indent_style = space
-indent_size = 2
-
-[*.rs]
-indent_size = 4
-
-# Set default charset
-charset = utf-8
-"#,
-    };
-    let jsconfig = FileSetting {
-        name: "jsconfig.json",
-        contents: r#"{
-  "compilerOptions": {
-    "allowSyntheticDefaultImports": true,
-    "baseUrl": "./src",
-    "checkJs": true,
-    "lib": ["dom", "es2017"],
-    "jsx": "react-jsx",
-    "moduleResolution": "node",
-    "noEmit": true,
-    "resolve": {
-      "extensions": [".js", ".jsx", ".json"],
-      "modules": ["src", "node_modules"]
-    },
-    "resolveJsonModule": true,
-    "target": "esnext",
-  },
-  "exclude": ["node_modules", "dist"],
-  "include": ["./**/*"]
-}"#,
-    };
-    let html = FileSetting {
-        name: "index.html",
-        contents: r#"<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="description" content="" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, shrink-to-fit=no"
-    />
-
-    <title>Project</title>
-
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
-
-    <script src="src/app.jsx" type="module"></script>
-  </head>
-  <body>
-    <div id="app"></div>
-  </body>
-</html>
-"#,
-    };
-    let vite_config = FileSetting {
-        name: "vite.config.js",
-        contents: r#"import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
-import { defineConfig } from 'vite';
-
-// https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      api: resolve(__dirname, './src/api'),
-      components: resolve(__dirname, './src/components'),
-      hooks: resolve(__dirname, './src/hooks'),
-      layouts: resolve(__dirname, './src/layouts'),
-      pages: resolve(__dirname, './src/pages'),
-      utils: resolve(__dirname, './src/utils'),
-    },
-  },
-});
-"#,
-    };
-
-    let project_jsx = FileSetting {
-        name: "src/pages/project/project.jsx",
-        contents: r#"export default function Project() {
-  return (
-    <main>
-      <header className="relative isolate">
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-          <div className="mx-auto flex max-w-2xl items-center justify-between gap-x-8 lg:mx-0 lg:max-w-none">
-            <div className="flex items-center gap-x-6">
-              <img
-                src="/images/red-box-48.png"
-                alt="Project"
-                className="h-16 w-16 flex-none"
-              />
-              <h1>
-                <div className="mt-1 text-base font-semibold leading-6 text-gray-900">
-                  Project
-                </div>
-              </h1>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-2xl grid-cols-1 grid-rows-1 items-start gap-x-8 gap-y-8 lg:mx-0 lg:max-w-none lg:grid-cols-3">
-          Test project ready to go!
-        </div>
-      </div>
-    </main>
-  );
-}
-"#,
-    };
-    let project_test_jsx = FileSetting {
-        name: "src/pages/project/project.test.jsx",
-        contents: r#"import { render, screen } from '@testing-library/react';
-import Project from './project';
-
-describe('<Project />', () => {
-  it('renders without crashing', () => {
-    render(<Project />);
-    expect(screen.getByAltText('Project')).toBeInTheDocument();
-  });
-
-  it('displays the image with alt text "Project"', () => {
-    render(<Project />);
-
-    const image = screen.getByAltText('Project');
-
-    expect(image).toBeInTheDocument();
-    expect(image.getAttribute('src')).toBe('/images/red-box-48.png');
-  });
-
-  it('displays the title "Project"', () => {
-    render(<Project />);
-
-    const title = screen.getByText('Project');
-
-    expect(title).toBeInTheDocument();
-  });
-
-  it('renders the text "Test project ready to go!"', () => {
-    render(<Project />);
-    expect(screen.getByText('Test project ready to go!')).toBeInTheDocument();
-  });
-});
-"#,
-    };
-    let app_jsx = FileSetting {
-        name: "src/app.jsx",
-        contents: r#"import { createRoot } from 'react-dom/client';
-import Project from 'pages/project/project';
-
-import './index.css';
-
-const root = createRoot(document.getElementById('app'));
-
-root.render(<Project />);
-"#,
-    };
-    let postcss_config = FileSetting {
-        name: "postcss.config.js",
-        contents: r#"export default {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-};
-"#,
-    };
-    let index_css = FileSetting {
-        name: "src/index.css",
-        contents: r#"@tailwind base;
-@tailwind components;
-@tailwind utilities;
-"#,
-    };
-    let tailwind_config = FileSetting {
-        name: "tailwind.config.js",
-        contents: r#"/** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-};
-"#,
-    };
-    let jest_setup = FileSetting {
-        name: "jest-setup.js",
-        contents: r#"import '@testing-library/jest-dom';"#,
-    };
-    let jest_config = FileSetting {
-        name: "jest.config.cjs",
-        contents: r#"module.exports = {
-  rootDir: '.',
-  moduleNameMapper: {
-    '^api/(.*)$': '<rootDir>/src/api/$1',
-    '^components/(.*)$': '<rootDir>/src/components/$1',
-    '^hooks/(.*)$': '<rootDir>/src/hooks/$1',
-    '^layouts/(.*)$': '<rootDir>/src/layouts/$1',
-    '^pages/(.*)$': '<rootDir>/src/pages/$1',
-    '^utils/(.*)$': '<rootDir>/src/utils/$1'
-  },
-  setupFilesAfterEnv: ['<rootDir>/jest-setup.js'],
-  testEnvironment: 'jsdom',
-};
-"#,
-    };
-    let babel_config = FileSetting {
-        name: "babel.config.cjs",
-        contents: r#"module.exports = {
-  presets: [
-    '@babel/preset-env',
-    ['@babel/preset-react', { runtime: 'automatic' }],
-  ],
-};
-"#,
-    };
-
-    // Write out all the configuration files.
-    println!("");
-    [
-        app_jsx,
-        babel_config,
-        editorconfig,
-        eslintrc,
-        git_ignore,
-        html,
-        index_css,
-        jest_config,
-        jest_setup,
-        jsconfig,
-        postcss_config,
-        prettier,
-        project_jsx,
-        project_test_jsx,
-        tailwind_config,
-        vite_config,
-    ]
-    .iter()
-    .for_each(|file| {
-        println!("Creating file: {}", file.name);
-
-        fs::write(file.name, file.contents).expect("Unable to write file");
-    });
-
-    // Define binary file content settings for icons and images.
-    // Each binary file is represented with its name and content.
-    let android_chrome_192 = BinaryFileSetting {
-        name: "android-chrome-192x192.png",
-        contents: ANDROID_CHROME_192,
-    };
-    let android_chrome_512 = BinaryFileSetting {
-        name: "android-chrome-512x512.png",
-        contents: ANDROID_CHROME_512,
-    };
-    let apple_touch = BinaryFileSetting {
-        name: "apple-touch-icon.png",
-        contents: APPLE_TOUCH,
-    };
-    let favicon_16 = BinaryFileSetting {
-        name: "favicon-16x16.png",
-        contents: FAVICON_16,
-    };
-    let favicon_32 = BinaryFileSetting {
-        name: "favicon-32x32.png",
-        contents: FAVICON_32,
-    };
-    let favicon = BinaryFileSetting {
-        name: "favicon.ico",
-        contents: FAVICON,
-    };
-    let webmanifest = BinaryFileSetting {
-        name: "site.webmanifest",
-        contents: WEBMANIFEST,
-    };
-    let red_box_48 = BinaryFileSetting {
-        name: "red-box-48.png",
-        contents: RED_BOX_48,
-    };
-
-    // Write out all the binary files.
-    [
-        android_chrome_192,
-        android_chrome_512,
-        apple_touch,
-        favicon_16,
-        favicon_32,
-        favicon,
-        webmanifest,
-    ]
-    .iter()
-    .for_each(|file| {
-        println!("Creating file: {}", file.name);
-
-        fs::write(format!("./public/{}", file.name), file.contents).expect("Unable to write file");
-    });
-
-    println!("Creating file: red-box-48.png");
-    fs::write("./public/images/red-box-48.png", red_box_48.contents).expect("Unable to write file");
-
-    println!("Done!");
-}
