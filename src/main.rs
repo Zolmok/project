@@ -76,7 +76,7 @@ fn setup_tailwind(app_path: &Path, spinner: &ProgressBar) {
 
     // Write src/index.css
     let css_path = app_path.join("src").join("index.css");
-    let tailwind_css = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n";
+    let tailwind_css = "@import 'tailwindcss';";
 
     if fs::write(css_path, tailwind_css).is_err() {
         spinner.finish_and_clear();
@@ -169,4 +169,3 @@ fn main() {
         }
     }
 }
-
